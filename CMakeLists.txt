@@ -201,11 +201,6 @@ macro(compile_asm_files)
   endforeach(_asm_file)
 endmacro()
 
-#[[set(NETBOX_SOURCES ${NETBOX_SOURCES}
-  vc_crt_fix_impl.cpp
-  ${ASM_OBJECTS}
-)]]
-
 endif(MSVC)
 
 #-------------------------------------------------------------------------------
@@ -235,6 +230,7 @@ if(MSVC)
 set(OPENSSL_COMPILE_FLAGS ${OPENSSL_COMPILE_FLAGS}
   /Zi /Zl
   -wd4090
+  -D_WIN32_WINNT=0x503
 )
 endif()
 
@@ -2290,6 +2286,23 @@ set(NETBOX_SOURCES
   src/NetBox/NetBox.rc
   src/NetBox/NetBox.def
 )
+if(MSVC)
+  if(DEFINED CMAKE_ULINK)
+    set(FIX_XP_CPP src/NetBox/vc_crt_fix_ulink.cpp)
+  else()
+    set(FIX_XP_CPP src/NetBox/vc_crt_fix_impl.cpp)
+    set(FIX_XP_ASM src/NetBox/vc_crt_fix.asm)
+    enable_language(C ASM_MASM)
+    set_source_files_properties(${FIX_XP_CPP} PROPERTIES COMPILE_FLAGS "-U_WIN32_WINNT")
+    if(PROJECT_PLATFORM STREQUAL "x64")
+      set_source_files_properties(${FIX_XP_ASM} PROPERTIES COMPILE_DEFINITIONS "-DX64")
+    endif()
+  endif()
+  set(NETBOX_SOURCES ${NETBOX_SOURCES}
+    ${FIX_XP_CPP}
+    ${FIX_XP_ASM}
+  )
+endif(MSVC)
 
 add_custom_target(NetBoxResources SOURCES
   src/NetBox/NetBoxEng.lng
@@ -2385,7 +2398,7 @@ target_link_libraries(NetBox PRIVATE
   ${NETBOX_LIBRARIES}
 )
 
-target_compile_options(NetBox PRIVATE
+target_compile_options(NetBox PRIVATE $<$<COMPILE_LANGUAGE:CXX>:
   -DBUILD_OFFICIAL
   -wd4251 -wd4275 -wd4661
   ${LIBNEON_DEFS}
@@ -2398,7 +2411,7 @@ target_compile_options(NetBox PRIVATE
   -DGSL_THROW_ON_CONTRACT_VIOLATION
   -DNOMINMAX
   -D_CRTIMP=
-)
+>)
 
 if(OPT_CREATE_PLUGIN_DIR)
 
@@ -2452,7 +2465,10 @@ ucm_add_flags(CXX /EHs)
 # /Gw - Enables whole program global data optimization
 # /GL - Enables whole program optimization
 ucm_remove_flags(CXX C /Ob1 /Ob2 CONFIG Release MinSizeRel RelWithDebInfo)
-ucm_add_flags(CXX C /fp:fast /Gw /GL CONFIG Release RelWithDebInfo MinSizeRel)
+ucm_add_flags(CXX C /fp:fast /Gw CONFIG Release RelWithDebInfo MinSizeRel)
+if(NOT DEFINED CMAKE_ULINK)
+  ucm_add_flags(CXX C /GL CONFIG Release RelWithDebInfo MinSizeRel)
+endif()
 ucm_add_flags(CXX C /RTC1 /DDEBUG CONFIG Debug)
 # ucm_add_flags(CXX /fsanitize=address CONFIG Debug) #/sdl
 ucm_add_linker_flags(MODULE SHARED ${NETBOX_DLL_LINK_FLAGS_RELEASE} CONFIG Release RelWithDebInfo MinSizeRel)
